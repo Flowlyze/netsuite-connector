@@ -25,31 +25,25 @@ define(['N/log', 'N/record'], function(log, record) {
             });
 
             // Example: Create a custom record in NetSuite for each row
-            row.forEach(function(row, index) {
-                try {
-                    var rec = record.create({
-                        type: 'customrecord_sample', // Replace with your custom record type
-                        isDynamic: true
-                    });
+			var rec = record.create({
+				type: 'customrecord_sample', // Replace with your custom record type
+				isDynamic: true
+			});
 
-                    // Set fields on the record
-                    rec.setValue({
-                        fieldId: 'custrecord_field1', // Replace with your field ID
-                        value: row.someField || 'Default'
-                    });
+			// Set fields on the record
+			rec.setValue({
+				fieldId: 'custrecord_field1', // Replace with your field ID
+				value: row.someField || 'Default'
+			});
 
-                    rec.setValue({
-                        fieldId: 'custrecord_field2', // Replace with another field ID
-                        value: 'Processed on row ' + index
-                    });
+			rec.setValue({
+				fieldId: 'custrecord_field2', // Replace with another field ID
+				value: 'Processed on row ' + index
+			});
 
-                    // Save the record and log its ID
-                    var recId = rec.save();
-                    log.debug('Record Created', 'ID: ' + recId);
-                } catch (innerErr) {
-                    log.error('Error Creating Record', innerErr.message);
-                }
-            });
+			// Save the record and log its ID
+			var recId = rec.save();
+			log.debug('Record Created', 'ID: ' + recId);
 
             var result = { success: true };
 
