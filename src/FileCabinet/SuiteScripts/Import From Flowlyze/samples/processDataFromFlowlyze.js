@@ -10,22 +10,22 @@ define(['N/log', 'N/record'], function(log, record) {
      *  - Apply custom transformation logic to input data
      *  - Interact with NetSuite entities (e.g., create/update records, saved searches, etc.)
      * 
-     * @param {Array} rows - Input data to process
+     * @param {Array} row - Input data to process
      * @returns {Object} Result of the processing
      */
-    function processData(rows) {
+    function processData(row) {
         try {
             // Log input data for traceability and debugging
-            log.debug('Input Received', JSON.stringify(rows));
+            log.debug('Input Received', JSON.stringify(row));
 
             // Example: Modify input data (custom logic)
-            rows = rows.map(function(row) {
+            row = row.map(function(row) {
                 row.customField = 'CustomValue';
                 return row;
             });
 
             // Example: Create a custom record in NetSuite for each row
-            rows.forEach(function(row, index) {
+            row.forEach(function(row, index) {
                 try {
                     var rec = record.create({
                         type: 'customrecord_sample', // Replace with your custom record type
@@ -54,7 +54,7 @@ define(['N/log', 'N/record'], function(log, record) {
             var result = { success: true };
 
             // Log output data if needed
-            log.debug('Output Sent', JSON.stringify(rows));
+            log.debug('Output Sent', JSON.stringify(row));
 
             return result;
         } catch (e) {
