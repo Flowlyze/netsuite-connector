@@ -1,5 +1,5 @@
 # Introduction 
-The "Netsuite Connector" consists in a set of Netsuite SuiteScripts which are thought to Speed-Up the integration between Netsuite and third-party applications (e.g. Shopify, Pimcore, etc.) exploiting the potentials of Flowlyze as system integrator.
+The "Netsuite Connector" consists in a set of Netsuite SuiteScripts which are thought to Speed-Up the integration between Netsuite and third-party applications (e.g. Shopify, Pimcore, etc.) leveraging the potentials of Flowlyze as system integrator.
 
 # Installation and Setup
 In order to correclty install the connector in Netsuite, you must follow these few steps:
