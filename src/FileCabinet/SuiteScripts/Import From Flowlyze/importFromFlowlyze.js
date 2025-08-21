@@ -55,6 +55,44 @@ define(['N/https', 'N/log', 'N/runtime', 'N/search'], function (https, log, runt
         }
     }
 
+    function getIntegrationConfigRecord(flow) {
+        try {
+            // Create a search for the integration configuration record
+            var configSearch = search.create({
+                type: 'customrecord_fly_flowlyze_integration',
+                filters: [
+                    ['custrecord_fly_flow_name', 'is', flow]
+                ],
+                columns: [
+                    'custrecord_fly_url',
+                    'custrecord_fly_api_key',
+                    'custrecord_fly_flow_name',
+                    'custrecord_fly_entity_name'
+                ]
+            });
+
+            // Get the results of the search
+            var configResults = configSearch.run().getRange({ start: 0, end: 1 });
+
+            // If a record is found, return the configuration object
+            if (configResults.length > 0) {
+                var configResult = configResults[0];
+                return {
+                    flow: flow,
+                    entityName: configResult.getValue('custrecord_fly_entity_name'),
+                    url: configResult.getValue('custrecord_fly_url'),
+                    apiKey: configResult.getValue('custrecord_fly_api_key'),
+                };
+            } else {
+                log.error('Integration Config Not Found', 'No integration configuration found for flow: ' + flow);
+                return null;
+            }
+        } catch (e) {
+            log.error('Error retrieving integration config: ' + e.message);
+            return null;
+        }
+    }
+
     /**
      * Fetches messages from the Flowlyze queue based on the integration configuration.
      *
@@ -91,8 +129,10 @@ define(['N/https', 'N/log', 'N/runtime', 'N/search'], function (https, log, runt
      */
     function processMessagesWithLogic(messages, customModule, integrationConfig) {
         log.debug('Custom Logic Module Loaded', 'Processing messages with custom logic.');
+        log.debug('Messages to process', JSON.stringify(messages));
+        log.debug('Custom module keys', Object.keys(customModule));
         var functionName = 'processData';
-
+        
         // Iterates over each message and processes it using the custom logic.
         for (var i = 0; i < messages.length; i++) {
             var message = messages[i];
@@ -164,48 +204,6 @@ define(['N/https', 'N/log', 'N/runtime', 'N/search'], function (https, log, runt
             log.debug('POST response status', ackResponse.code);
         } catch (ackError) {
             log.error('Error sending ACK for message ' + msgId, ackError.message);
-        }
-    }
-
-    /**
-     * Retrieves the integration configuration record based on the flow name.
-     *
-     * @param {string} flow - The name of the flow to retrieve the configuration for.
-     * @returns {Object|null} The integration configuration object, or null if not found.
-     */
-    function getIntegrationConfigRecord(flow) {
-        try {
-            // Searches for the integration configuration record.
-            var configSearch = search.create({
-                type: 'customrecord_fly_flowlyze_integration',
-                filters: [
-                    ['custrecord_fly_flow_name', 'is', flow]
-                ],
-                columns: [
-                    'custrecord_fly_url',
-                    'custrecord_fly_api_key',
-                    'custrecord_fly_flow_name',
-                    'custrecord_fly_entity_name'
-                ]
-            });
-
-            var configResults = configSearch.run().getRange({ start: 0, end: 1 });
-
-            if (configResults.length > 0) {
-                var configResult = configResults[0];
-                return {
-                    flow: flow,
-                    entityName: configResult.getValue('custrecord_fly_entity_name'),
-                    url: configResult.getValue('custrecord_fly_url'),
-                    apiKey: configResult.getValue('custrecord_fly_api_key'),
-                };
-            } else {
-                log.error('Integration Config Not Found', 'No integration configuration found for flow: ' + flow);
-                return null;
-            }
-        } catch (e) {
-            log.error('Error retrieving integration config', e.message);
-            return null;
         }
     }
 

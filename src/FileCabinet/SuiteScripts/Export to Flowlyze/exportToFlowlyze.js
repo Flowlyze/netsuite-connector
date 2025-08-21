@@ -3,7 +3,7 @@
  * @NScriptType MapReduceScript
  * @NModuleScope SameAccount
  */
-define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/format'], function (search, https, runtime, record, file, log, format) {
+define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/log', 'N/format', '../Utils/suiteScriptsUtils'], function (search, https, runtime, record, log, format, utils) {
     /**
      * Defines the function that is executed at the beginning of the map/reduce process and generates the input data.
      * @param {Object} context
@@ -28,7 +28,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
             log.debug('savedSearchId', savedSearchId);
 
             // Load the saved search
-            let searchObj = search.load({
+            var searchObj = search.load({
                 id: savedSearchId
             });
 
@@ -44,30 +44,32 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
 
                 // Get the last execution date for the flow
                 var lastExecutionData = getLastExecutionDate(flow);
+                // Aggiungi 1 millisecondo alla data se esiste
+                if (lastExecutionData && lastExecutionData.date) {
+                    var dateObj = new Date(lastExecutionData.date);
+                    dateObj.setMilliseconds(dateObj.getMilliseconds() + 1000);
+                    lastExecutionData.date = dateObj;
+                }
                 log.debug('lastExecutionData.date', lastExecutionData.date);
                 var lastExecutionDate = (lastExecutionData !== null && lastExecutionData !== false && lastExecutionData.date !== '') ? lastExecutionData.date : new Date(0);
                 log.debug('lastExecutionDate', lastExecutionDate);
 
                 // Format the last execution date to a string
                 var dateString = format.format({
-
                     value: lastExecutionDate,
-
                     type: format.Type.DATE
-
                 });
 
                 // Format the last execution time to a string
                 var timeString = format.format({
-
                     value: lastExecutionDate,
-
                     type: format.Type.TIMEOFDAY
-
                 });
 
                 // Combine the date and time strings
                 var dt = dateString + ' ' + timeString;
+
+                // dt = utils.formatDateToDDMMYYYY(lastExecutionData.date);
                 log.debug('formatted date', dt);
 
                 try {
@@ -81,8 +83,8 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
                         // Creating a filter to include only records modified after the last execution date
                         let newFilter = search.createFilter({
                             name: last_modified_field_label,
-                            operator: search.Operator.NOTONORBEFORE,
-                            values: [dt]
+                            operator: search.Operator.AFTER,
+                            values: dt
                         });
                         log.debug('Costruito nuovo filtro', JSON.stringify(newFilter));
 
@@ -137,7 +139,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
             log.debug('searchObj2', searchObj);
 
             // Get all results from the search
-            let resultObj = getAllResults(searchObj, (el, columns) => {// Log all columns and their values for each result
+            let resultObj = utils.getAllResults(searchObj, (el, columns) => {// Log all columns and their values for each result
                 let result = {};
                 columns.forEach((column, index) => {
                     let columnValue = el.getValue(column);
@@ -158,55 +160,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
         }
     }
 
-    /**
-     * Function to get all results from a search
-     * @param {Object} baseSearch The base search object
-     * @param {Function} fxResultMap The function to map the results
-     * @returns {Array} The array of search results
-     */
-    function getAllResults(baseSearch, fxResultMap) {
-        let searchResults = [];
-        let start = 0;
-        let partialResults = null;
-        let baseSearchObj = baseSearch.run();
-        let labelsMap = {};
-        let columns = baseSearchObj.columns;
-
-        // Populate the label map
-        columns.forEach((element, index) => {
-            labelsMap[element.label.trim()] = index;
-        });
-
-        try {
-            do {
-                partialResults = baseSearchObj.getRange({
-                    start: start,
-                    end: start + 1000
-                });
-                if (partialResults) {
-                    partialResults.forEach((element) => {
-                        if (fxResultMap) {
-                            searchResults.push(fxResultMap(element, columns, labelsMap));
-                        } else {
-                            searchResults.push(element);
-                        }
-                    });
-                }
-                start += 1000;
-            } while (partialResults && partialResults.length >= 1000);
-
-        } catch (error) {
-            // Error handling
-            log.error({
-                title: 'Error retrieving results',
-                details: error.message
-            });
-            throw error;
-        }
-
-        return searchResults;
-    }
-
+    
     /**
      * Defines the map() function that is executed for each input key/value.  Map stage of the map/reduce process.
      * @param {Object} mapContext
@@ -216,21 +170,15 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
      * @since 2015.2
      */
     const map = (mapContext) => {
-        // log.debug('MAP Script Starts!');
-        // log.debug('mapContext.Key', mapContext.key);
-        // log.debug('mapContext.Value', mapContext.value);
-        // Parse the value from the map context
         let mapObj = JSON.parse(mapContext.value);
         // Calculate the chunk key
         let chunkKey = parseInt(mapContext.key) / 10;
-        // log.debug('chunkKey', chunkKey);
         // Get the integer part of the chunk key
         let chunkKeyInteger = Math.floor(chunkKey);
-        // log.debug('chunkKeyInteger', chunkKeyInteger);
         mapContext.write({
             // key: mapContext.key,
             key: chunkKeyInteger,
-            value: mapObj // Convert quantityonhand to a number
+            value: mapObj
         });
     }
 
@@ -273,6 +221,10 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
 
             log.debug('itemObj', (JSON.stringify(itemObj, null, 2)));
 
+            var rows = utils.preProcessRows(itemObj);
+
+            log.debug('preProcessRows', (JSON.stringify(rows, null, 2)));
+
             // Get the current script object to retrieve script parameters
             var scriptObj = runtime.getCurrentScript();
             // Retrieve the flow name from the script parameters
@@ -280,7 +232,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
             log.debug('flow', flow);
 
             // Get the integration configuration record for the flow
-            var integrationConfig = getIntegrationConfigRecord(flow);
+            var integrationConfig = utils.getIntegrationConfigRecord(flow);
 
             // If the integration configuration is missing, log an error and return
             if (!integrationConfig || !integrationConfig.url || !integrationConfig.apiKey || !integrationConfig.flow || !integrationConfig.entityName) {
@@ -297,8 +249,8 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
             log.debug('Custom Module Path', modulePath);
 
             // Define a default transformation function
-            var defaultTransform = function (row) {
-                return row; // Default transformation: No changes
+            var defaultTransform = function (rows) {
+                return rows; // Default transformation: No changes
             };
 
             var transformFn = defaultTransform; // Default to no transformation
@@ -319,16 +271,16 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
                             log.error('Invalid Transform Function', 'The custom module does not export a valid ' + functionName + ' function.');
                         }
 
-                        processExport(itemObj, transformFn, folderId, integrationConfig);
+                        processExport(rows, transformFn, folderId, integrationConfig);
                     });
                 } catch (e) {
-                    log.error('Error Loading Custom Transform Module', e.message);
-                    processExport(itemObj, transformFn, folderId, integrationConfig); // Use default transformation
+                    log.error('Error Loading Custom Transform Module', e);
+                    processExport(rows, transformFn, folderId, integrationConfig); // Use default transformation
                     return;
                 }
             } else {
                 log.debug('No Custom Transform Module Found', 'Processing rows with default transform.');
-                processExport(itemObj, transformFn, folderId, integrationConfig);
+                processExport(rows, transformFn, folderId, integrationConfig);
             }
         } catch (error) {
             log.error('Error processing value: ' + error.message);
@@ -348,7 +300,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
         log.debug('Rows Before Transformation', JSON.stringify(rows));
 
         // Generate the file name
-        var fileNameBefore = 'RowsBeforeTransform_' + getCurrentDateTime() + '.json';
+        var fileNameBefore = 'RowsBeforeTransform_' + utils.getCurrentDateTime() + '.json';
 
         // Save the file and get the content
         // Check if folderId is empty
@@ -356,7 +308,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
             log.debug('Folder ID is empty. Skipping file saving.');
         } else {
             // Save the file and get the content
-            var fileIdBefore = saveToFile(rows, fileNameBefore, folderId);
+            var fileIdBefore = utils.saveToFile(rows, fileNameBefore, folderId);
         }
 
         var scriptObj = runtime.getCurrentScript();
@@ -369,7 +321,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
             log.debug('Rows After Transformation', JSON.stringify(transformedRows));
 
             // Generate the file name
-            var fileNameAfter = 'RowsAfterTransform_' + getCurrentDateTime() + '.json';
+            var fileNameAfter = 'RowsAfterTransform_' + utils.getCurrentDateTime() + '.json';
 
             // Save the file and get the content
             // Save the file and get the content
@@ -379,7 +331,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
                 log.debug('Folder ID is empty. Skipping file saving.');
             } else {
                 // Save the file and get the content
-                fileId = saveToFile(transformedRows, fileNameAfter, folderId);
+                fileId = utils.saveToFile(transformedRows, fileNameAfter, folderId);
             }
 
             // Export the items
@@ -396,16 +348,26 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
                         isDynamic: true
                     });
 
+                    var lastLastmodifieddate = null;
+
                     // Get the value of lastmodifieddate of the last element
-                    var lastLastmodifieddate = transformedRows && transformedRows.length > 0 && transformedRows[transformedRows.length - 1].fly_lastmodifieddate ?
-                        transformedRows[transformedRows.length - 1].fly_lastmodifieddate : null;
+                    for (let index = 0; index < transformedRows.length; index++) {
+                        var currDate = new Date(transformedRows[index].fly_lastmodifieddate);
+
+                        if(lastLastmodifieddate == null || currDate > new Date(lastLastmodifieddate)){
+                            lastLastmodifieddate = transformedRows[index].fly_lastmodifieddate;
+                        }
+                    }
+                    
+                    //var lastLastmodifieddate = transformedRows && transformedRows.length > 0 && transformedRows[transformedRows.length - 1].fly_lastmodifieddate ?
+                    //    transformedRows[transformedRows.length - 1].fly_lastmodifieddate : null;
                     log.debug('lastLastmodifieddate', lastLastmodifieddate);
 
                     // Set the values of the custom record fields
-                    newRecord.setValue({ fieldId: 'name', value: integrationConfig.entityName + '_' + integrationConfig.flow + '_' + getCurrentDateTime() });
+                    newRecord.setValue({ fieldId: 'name', value: integrationConfig.entityName + '_' + integrationConfig.flow + '_' + utils.getCurrentDateTime() });
                     newRecord.setValue({ fieldId: 'custrecord_entity_name', value: integrationConfig.entityName });
                     newRecord.setValue({ fieldId: 'custrecord_flow_name', value: integrationConfig.flow });
-                    newRecord.setValue({ fieldId: 'custrecord_last_execution_date', value: parseCustomDateString(lastLastmodifieddate) });
+                    newRecord.setValue({ fieldId: 'custrecord_last_execution_date', value: utils.parseCustomDateString(lastLastmodifieddate) });
                     newRecord.setValue({ fieldId: 'custrecord_json_body', value: fileId });
 
                     // Save the custom record
@@ -423,77 +385,6 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
         } catch (e) {
             log.error('Error during transformation or export: ' + e.message);
         }
-    }
-
-    /**
-     * Parses a custom date string
-     * @param {string} dateStr The date string to parse
-     * @returns {Date} The parsed date
-     */
-    function parseCustomDateString(dateStr) {
-        var parts = dateStr.split(' ');
-        var dateParts = parts[0].split('/');
-        var timeParts = parts[1].split(':');
-        var hour = parseInt(timeParts[0], 10);
-        var minute = parseInt(timeParts[1], 10);
-        var isPM = parts[2] === 'PM';
-
-        if (isPM && hour < 12) {
-            hour += 12;
-        } else if (!isPM && hour === 12) {
-            hour = 0;
-        }
-
-        return new Date(
-            parseInt(dateParts[2], 10),
-            parseInt(dateParts[1], 10) - 1,
-            parseInt(dateParts[0], 10),
-            hour,
-            minute
-        );
-    }
-
-    /**
-     * Saves data to a file
-     * @param {Object} data The data to save
-     * @param {string} fileName The name of the file
-     * @param {string} folderId The ID of the folder to save the file to
-     * @returns {string} The ID of the file
-     */
-    function saveToFile(data, fileName, folderId) {
-        try {
-            // Convert the data to a JSON string
-            var jsonData = JSON.stringify(data, null, 2);
-            // Create the file
-            var jsonFile = file.create({
-                name: fileName,
-                fileType: file.Type.JSON,
-                contents: jsonData,
-                folder: folderId
-            });
-
-            // Save the file
-            var fileId = jsonFile.save();
-            log.debug('File Saved', 'File Name: ' + fileName + ', File ID: ' + fileId);
-
-            // Return the content of the saved file
-            return fileId;
-
-        } catch (e) {
-            log.error('File Save Failed', e.message);
-            return false; // Returns an empty JSON in case of error
-        }
-    }
-
-    /**
-     * Gets the current date and time
-     * @returns {string} The current date and time in ISO format
-     */
-    function getCurrentDateTime() {
-        const formattedDate = new Date().toISOString().replace(/[^\w\s]/g, '_').slice(0, 19);
-        const machineDate = new Date().getTime(); // Timestamp in millisecondi
-
-        return formattedDate + '_' + machineDate;
     }
 
     /**
@@ -521,63 +412,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/file', 'N/log', 'N/fo
 
         log.debug('response', JSON.stringify(response));
 
-        //Simulation of a successful API response
-        // var response = {
-        //     code: 200,
-        //     body: {
-        //         success: true,
-        //         message: 'Data successfully sent to external system',
-        //         entityName: 'NetSuite Customer',
-        //         flowName: 'Customer Sync'
-        //     }
-        // };
-
-        // log.debug('Simulated response', JSON.stringify(response));
-
         return response;
-    }
-
-    /**
-     * Gets the integration configuration record for a flow
-     * @param {string} flow The name of the flow
-     * @returns {Object} The integration configuration record
-     */
-    function getIntegrationConfigRecord(flow) {
-        try {
-            // Create a search for the integration configuration record
-            var configSearch = search.create({
-                type: 'customrecord_fly_flowlyze_integration',
-                filters: [
-                    ['custrecord_fly_flow_name', 'is', flow]
-                ],
-                columns: [
-                    'custrecord_fly_url',
-                    'custrecord_fly_api_key',
-                    'custrecord_fly_flow_name',
-                    'custrecord_fly_entity_name'
-                ]
-            });
-
-            // Get the results of the search
-            var configResults = configSearch.run().getRange({ start: 0, end: 1 });
-
-            // If a record is found, return the configuration object
-            if (configResults.length > 0) {
-                var configResult = configResults[0];
-                return {
-                    flow: flow,
-                    entityName: configResult.getValue('custrecord_fly_entity_name'),
-                    url: configResult.getValue('custrecord_fly_url'),
-                    apiKey: configResult.getValue('custrecord_fly_api_key'),
-                };
-            } else {
-                log.error('Integration Config Not Found', 'No integration configuration found for flow: ' + flow);
-                return null;
-            }
-        } catch (e) {
-            log.error('Error retrieving integration config: ' + e.message);
-            return null;
-        }
     }
 
     /**
