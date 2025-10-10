@@ -212,7 +212,11 @@ define(['N/search', 'N/file', 'N/log'], (search, file, log) => {
                 processedRow.tags = [];
 
                 Object.keys(row).forEach(function (key) {
-                    const value = row[key].replace("\n","\\n");
+                    log.debug('Processing Key', 'Key: ' + key + ', Value: ' + row[key]);
+                    var value = row[key];
+                    if (typeof value === 'string' && value.trim() !== '') {
+                        value = value.replace("\n", "\\n");
+                    }
 
                     if (key && key.includes('|')) {
                         const parts = key.split('|');

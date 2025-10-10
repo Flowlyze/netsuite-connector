@@ -44,7 +44,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/log', 'N/format', '..
 
                 // Get the last execution date for the flow
                 var lastExecutionData = getLastExecutionDate(flow);
-                // Aggiungi 1 millisecondo alla data se esiste
+                // Add 1000 milliseconds (1 second) to the date if it exists
                 if (lastExecutionData && lastExecutionData.date) {
                     var dateObj = new Date(lastExecutionData.date);
                     dateObj.setMilliseconds(dateObj.getMilliseconds() + 1000);
@@ -125,18 +125,18 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/log', 'N/format', '..
             log.debug('searchObj1', searchObj);
 
             // Add sorting by lastmodifieddate ascending
-            let columns = searchObj.columns || [];
-            columns.push(
-                search.createColumn({
-                    name: last_modified_field_label,
-                    label: 'fly_lastmodifieddate',
-                    type: search.Type.DATETIME,
-                    sort: search.Sort.ASC
-                })
-            );
-            searchObj.columns = columns;
+            // let columns = searchObj.columns || [];
+            // columns.push(
+            //     search.createColumn({
+            //         name: last_modified_field_label,
+            //         label: 'fly_lastmodifieddate',
+            //         type: search.Type.DATETIME,
+            //         sort: search.Sort.ASC
+            //     })
+            // );
+            // searchObj.columns = columns;
 
-            log.debug('searchObj2', searchObj);
+            // log.debug('searchObj2', searchObj);
 
             // Get all results from the search
             let resultObj = utils.getAllResults(searchObj, (el, columns) => {// Log all columns and their values for each result
@@ -160,7 +160,7 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/log', 'N/format', '..
         }
     }
 
-    
+
     /**
      * Defines the map() function that is executed for each input key/value.  Map stage of the map/reduce process.
      * @param {Object} mapContext
@@ -172,7 +172,16 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/log', 'N/format', '..
     const map = (mapContext) => {
         let mapObj = JSON.parse(mapContext.value);
         // Calculate the chunk key
-        let chunkKey = parseInt(mapContext.key) / 10;
+
+        // Get the current script object to retrieve script parameters
+        var scriptObj = runtime.getCurrentScript();
+
+        // Get batch elements parameter and set default to 10 if not defined
+        var batchElements = scriptObj.getParameter({ name: 'custscript_fly_batch_elements' });
+        batchElements = batchElements ? parseInt(batchElements, 10) : 10;
+        log.debug('Batch Elements', batchElements);
+
+        let chunkKey = parseInt(mapContext.key) / batchElements;
         // Get the integer part of the chunk key
         let chunkKeyInteger = Math.floor(chunkKey);
         mapContext.write({
@@ -354,11 +363,11 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/log', 'N/format', '..
                     for (let index = 0; index < transformedRows.length; index++) {
                         var currDate = new Date(transformedRows[index].fly_lastmodifieddate);
 
-                        if(lastLastmodifieddate == null || currDate > new Date(lastLastmodifieddate)){
+                        if (lastLastmodifieddate == null || currDate > new Date(lastLastmodifieddate)) {
                             lastLastmodifieddate = transformedRows[index].fly_lastmodifieddate;
                         }
                     }
-                    
+
                     //var lastLastmodifieddate = transformedRows && transformedRows.length > 0 && transformedRows[transformedRows.length - 1].fly_lastmodifieddate ?
                     //    transformedRows[transformedRows.length - 1].fly_lastmodifieddate : null;
                     log.debug('lastLastmodifieddate', lastLastmodifieddate);
@@ -373,11 +382,29 @@ define(['N/search', 'N/https', 'N/runtime', 'N/record', 'N/log', 'N/format', '..
                     // Save the custom record
                     var recordId = newRecord.save();
                     log.debug('Custom Record Created', 'Record ID: ' + recordId);
+
+                    var modulePath = scriptObj.getParameter({ name: 'custscript_fly_custom_script' });
+                    log.debug('Custom Module Path', modulePath);
+                    if (modulePath) {
+                        require([modulePath], function (customModule) {
+                            log.debug('Custom Transform Module Loaded', 'Processing rows with custom transform.');
+
+                            if (typeof customModule['logicAfterAcknowledgement'] === 'function') {
+                                log.debug('Custom Function Found', 'Invoking logicAfterAcknowledgement');
+                                logicAfterAcknowledgement = customModule['logicAfterAcknowledgement'];
+                                logicAfterAcknowledgement(transformedRows);
+                            } else {
+                                log.debug('Invalid Transform Function', 'The custom module does not export a valid logicAfterAcknowledgement function.');
+                            }
+                        });
+                    }
                 } catch (e) {
                     log.error('Error creating custom record', e.message);
+                    throw e;
                 }
             } else {
                 log.error('Error: API did not respond with body');
+                throw new Error('API did not respond with a successful status code.');
             }
 
             log.debug('Process Export Completed', 'All rows processed and exported.');
